@@ -1,0 +1,73 @@
+services:
+  web-ui:
+    build:
+      context: ./web-ui
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount source code for hot reloading
+      - ./web-ui/src:/app/src
+      - ./web-ui/public:/app/public
+      # Mount package.json for dependency changes
+      - ./web-ui/package.json:/app/package.json
+      - ./web-ui/package-lock.json:/app/package-lock.json
+      # Exclude node_modules to prevent conflicts
+      - /app/node_modules
+    depends_on:
+      - scene-parser
+      - tts
+      - video-renderer
+    environment:
+      # Enable hot reloading
+      - CHOKIDAR_USEPOLLING=true
+      - FAST_REFRESH=true
+      # Prevent browser auto-open in container
+      - BROWSER=none
+    stdin_open: true
+    tty: true
+
+  scene-parser:
+    build:
+      context: ./scene-parser
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./assets:/assets
+      - ./scene-parser/src:/app/src
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+
+  tts:
+    build:
+      context: ./tts
+      dockerfile: Dockerfile
+    ports:
+      - "5002:5000"
+    volumes:
+      - ./assets:/assets
+      - ./tts/src:/app/src
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+
+  video-renderer:
+    build:
+      context: ./video-renderer
+      dockerfile: Dockerfile
+    ports:
+      - "5003:5000"
+    volumes:
+      - ./assets:/assets
+      - ./video-renderer/src:/app/src
+    depends_on:
+      - tts
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+
+networks:
+  default:
+    driver: bridge
