@@ -4,8 +4,47 @@ import uuid
 from datetime import datetime
 import asyncio
 import edge_tts
+from flask_cors import CORS
+import tempfile
+import atexit
+import threading
+import time
 
 app = Flask(__name__)
+CORS(app)
+
+# Store temporary files for cleanup
+temp_files = []
+cleanup_lock = threading.Lock()
+
+def cleanup_temp_files():
+    """Clean up temporary files"""
+    with cleanup_lock:
+        for file_path in temp_files[:]:
+            try:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+                temp_files.remove(file_path)
+            except Exception as e:
+                print(f"Error cleaning up {file_path}: {e}")
+
+def schedule_cleanup(file_path, delay=300):  # Clean up after 5 minutes
+    """Schedule file cleanup after delay"""
+    def cleanup():
+        time.sleep(delay)
+        with cleanup_lock:
+            try:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+                if file_path in temp_files:
+                    temp_files.remove(file_path)
+            except Exception as e:
+                print(f"Error in scheduled cleanup of {file_path}: {e}")
+    
+    threading.Thread(target=cleanup, daemon=True).start()
+
+# Register cleanup on exit
+atexit.register(cleanup_temp_files)
 
 async def generate_edge_tts(text, voice, output_file):
     """Generate TTS using Edge TTS"""
@@ -32,11 +71,11 @@ def get_voices():
             'name': voice['Name'],
             'display_name': voice['DisplayName'],
             'locale': voice['Locale']
-        } for voice in voices if 'en-' in voice['Locale']])
+        } for voice in voices if 'en-' in voice['Locale'] or 'zh-' in voice['Locale']])
     finally:
         loop.close()
 
-@app.route('/generate', methods=['POST'])
+@app.route('/generate_tts', methods=['POST'])  # Changed endpoint name to match frontend
 def generate_tts():
     try:
         data = request.json
@@ -47,12 +86,16 @@ def generate_tts():
         text = data['text']
         voice = data.get('voice', 'en-US-AriaNeural')
         
-        # Generate unique filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"tts_{timestamp}_{uuid.uuid4().hex[:8]}.wav"
-        output_file = f"/assets/audio/{filename}"
+        print(f"Generating TTS for: '{text}' with voice: {voice}")
         
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        # Create temporary file for audio - use .mp3 extension as Edge TTS outputs MP3
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+        output_file = temp_file.name
+        temp_file.close()
+        
+        # Add to cleanup list
+        with cleanup_lock:
+            temp_files.append(output_file)
         
         # Generate TTS audio
         loop = asyncio.new_event_loop()
@@ -62,17 +105,31 @@ def generate_tts():
         finally:
             loop.close()
         
-        if success:
-            return jsonify({
-                'status': 'success',
-                'audio_file': output_file,
-                'text': text,
-                'voice': voice
-            })
+        if success and os.path.exists(output_file):
+            print(f"TTS generation successful, file size: {os.path.getsize(output_file)} bytes")
+            
+            # Schedule cleanup after 5 minutes
+            schedule_cleanup(output_file)
+            
+            # Return the audio file directly
+            return send_file(
+                output_file,
+                mimetype='audio/mpeg',  # Changed to MP3 MIME type
+                as_attachment=False,
+                download_name=f'tts_audio.mp3'
+            )
         else:
+            print("TTS generation failed")
+            # Clean up temp file if generation failed
+            with cleanup_lock:
+                if output_file in temp_files:
+                    temp_files.remove(output_file)
+            if os.path.exists(output_file):
+                os.unlink(output_file)
             return jsonify({'error': 'Failed to generate TTS audio'}), 500
             
     except Exception as e:
+        print(f"Exception in generate_tts: {e}")
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 if __name__ == '__main__':
