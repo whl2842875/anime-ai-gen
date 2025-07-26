@@ -10,20 +10,17 @@ The project is organized into several components, each running in its own Docker
 - **scene-parser**: A Python service that parses user text into scenes/scripts using the `qwen2-1_5b-instruct-q4_k_m.gguf` model.
 - **tts**: A Python service that generates TTS audio locally using Edge TTS.
 - **video-renderer**: A Python service that renders a "talking head" video by cycling through pre-made GIF expressions and applying camera moves.
-- **assets**: Contains all necessary assets such as backgrounds, characters, voices, and BGM.
-- **scripts**: Contains the entrypoint script for orchestrating the startup of the various components.
 
 ## Setup Instructions
 
 ### Prerequisites
 - Docker
-- Docker Compose
 
 ### Building and Running the Application
 1. Clone the repository:
    ```
-   git clone <repository-url>
-   cd anime-gen-tool
+   git clone https://github.com/whl2842875/anime-ai-gen.git
+   cd anime-ai-gen
    ```
 
 2. Build and start the Docker containers:
@@ -32,7 +29,12 @@ The project is organized into several components, each running in its own Docker
    ```
 
 3. Access the web UI:
-   Open your web browser and navigate to `http://localhost:3000`.
+   Open your web browser and navigate to `http://localhost:8080`.
+
+   Backend:
+   - scene-parser: `http://localhost:5001`
+   - tts: `http://localhost:5002`
+   - video-renderer: `http://localhost:5003`
 
 ## Usage
 1. Enter your text in the provided input field.
@@ -45,9 +47,3 @@ The project is organized into several components, each running in its own Docker
 - **Scene Parser**: Parses user input into structured scenes/scripts.
 - **TTS**: Converts text to speech for character dialogues.
 - **Video Renderer**: Combines audio and visuals to create the final video output.
-
-## Contributing
-Contributions are welcome! Please submit a pull request or open an issue for any suggestions or improvements.
-
-## License
-This project is licensed under the MIT License. See the LICENSE file for details.
