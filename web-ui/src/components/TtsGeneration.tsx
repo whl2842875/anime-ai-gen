@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { storageManager } from '../utils/storage'
 
 interface TtsGenerationProps {
-  parsed: any
   onComplete: () => void
 }
 
@@ -14,7 +13,8 @@ interface AudioData {
   error?: string
 }
 
-export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps) {
+export default function TtsGeneration({ onComplete }: TtsGenerationProps) {
+  const [parsed, setParsed] = useState<any>(null)
   const [characterImages, setCharacterImages] = useState<Record<string, string>>({})
   const [backgroundImages, setBackgroundImages] = useState<Record<string, string>>({})
   const [voiceSettings, setVoiceSettings] = useState<Record<string, string>>({})
@@ -22,17 +22,19 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
   const [playingAudio, setPlayingAudio] = useState<string | null>(null)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
 
-  // Load all required data from storage
+  // Load all required data from storage on mount
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [images, backgrounds, voices, savedAudio] = await Promise.all([
+        const [savedParsed, images, backgrounds, voices, savedAudio] = await Promise.all([
+          storageManager.getData('parsed'),
           storageManager.getData('characterImages'),
           storageManager.getData('backgroundImages'),
           storageManager.getData('voiceSettings'),
           storageManager.getData('audioFiles')
         ])
 
+        if (savedParsed) setParsed(savedParsed)
         if (images) setCharacterImages(images)
         if (backgrounds) setBackgroundImages(backgrounds)
         if (voices) setVoiceSettings(voices)
@@ -81,7 +83,7 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
     loadData()
   }, [])
 
-  // Save audio data whenever it changes
+  // Save audio data to storage whenever it changes
   useEffect(() => {
     if (Object.keys(audioData).length > 0) {
       // Prepare data for storage (without blob URLs, but with base64 data)
@@ -260,25 +262,26 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
     })
   }
 
-  // Delete all generated audio
-  const deleteAllAudio = () => {
-    if (window.confirm('Are you sure you want to delete all generated audio files?')) {
-      // Stop any playing audio
-      if (playingAudio) {
-        stopAudio()
-      }
-
-      // Revoke all blob URLs to free memory
-      Object.values(audioData).forEach(audio => {
-        if (audio.audioUrl) {
-          URL.revokeObjectURL(audio.audioUrl)
+  // Clear all audio files
+  const clearAllAudio = async () => {
+    if (window.confirm('Are you sure you want to clear all audio files?')) {
+      try {
+        await storageManager.deleteData('audioFiles')
+        
+        // Revoke all blob URLs to free memory
+        Object.values(audioData).forEach(audio => {
+          if (audio.audioUrl) {
+            URL.revokeObjectURL(audio.audioUrl)
+          }
+        })
+        
+        setAudioData({})
+        if (playingAudio) {
+          stopAudio()
         }
-      })
-
-      setAudioData({})
-      
-      // Clear from storage
-      storageManager.deleteData('audioFiles').catch(console.error)
+      } catch (error) {
+        console.error('Failed to clear audio files:', error)
+      }
     }
   }
 
@@ -388,6 +391,22 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
     (audio.audioUrl || audio.audioData) && !audio.isGenerating && !audio.error
   ).length
 
+  const totalLinesCount = React.useMemo(() => {
+    if (!parsed?.scenes) return 0
+    
+    let count = 0
+    parsed.scenes.forEach((scene: any) => {
+      scene.sub_scenes?.forEach((sub: any) => {
+        sub.storyboards?.forEach((sb: any) => {
+          if (sb.line && sb.character && voiceSettings[sb.character]) {
+            count++
+          }
+        })
+      })
+    })
+    return count
+  }, [parsed, voiceSettings])
+
   // Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
@@ -399,11 +418,26 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
     }
   }, [])
 
+  if (!parsed) {
+    return (
+      <div>
+        <h2>4. TTS Generation</h2>
+        <div style={{ color: '#888', padding: 20, textAlign: 'center' }}>
+          <p>No parsed script data found.</p>
+          <p>Please go back to the Script Parser and parse your script first.</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
       <h2>4. TTS Generation</h2>
+      <p style={{ color: '#888', marginBottom: 12, fontSize: 14 }}>
+        Generate Text-to-Speech audio for all character dialogue lines using their selected voices.
+      </p>
       
-      <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>        
         <button
           onClick={generateAllTTS}
           disabled={isGeneratingAll}
@@ -433,33 +467,16 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
           )}
         </button>
         
-        {generatedAudioCount > 0 && (
-          <button
-            onClick={deleteAllAudio}
-            style={{
-              padding: '12px 24px',
-              background: '#ff6b6b',
-              color: 'white',
-              border: 'none',
-              borderRadius: 6,
-              cursor: 'pointer',
-              fontSize: 14,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
-            }}
-          >
-            <span>🗑️</span>
-            Delete All Audio ({generatedAudioCount})
-          </button>
-        )}
+        <div style={{ fontSize: 14, color: '#888' }}>
+          Generated: {generatedAudioCount}/{totalLinesCount} audio files
+        </div>
         
         {playingAudio && (
           <button
             onClick={stopAudio}
             style={{
               padding: '8px 16px',
-              background: '#ff6b6b',
+              background: '#888',
               color: 'white',
               border: 'none',
               borderRadius: 4,
@@ -470,9 +487,31 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
             ⏹️ Stop
           </button>
         )}
+        
+        {generatedAudioCount > 0 && (
+          <button
+            onClick={clearAllAudio}
+            style={{
+              padding: '12px 24px',
+              background: '#ff6b6b',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 14,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginLeft: 'auto'
+            }}
+          >
+            <span>🗑️</span>
+            Clear All Audio ({generatedAudioCount})
+          </button>
+        )}
       </div>
 
-      {parsed && parsed.scenes && parsed.scenes.length > 0 ? (
+      {parsed.scenes && parsed.scenes.length > 0 ? (
         <div style={{ 
           maxHeight: 400, 
           overflow: 'auto', 
@@ -520,7 +559,7 @@ export default function TtsGeneration({ parsed, onComplete }: TtsGenerationProps
               {scene.sub_scenes && scene.sub_scenes.map((sub: any, subIdx: number) => (
                 <div key={sub.sub_scene_id ?? subIdx} style={{ marginLeft: 16, marginBottom: 12 }}>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                    Sub scene: {sub.sub_scene_id ?? subIdx + 1}{' '}
+                    分镜: {sub.sub_scene_id ?? subIdx + 1}{' '}
                     <span style={{ fontWeight: 400, fontSize: 13, color: '#888' }}>
                       ({sub.camera_movement})
                     </span>

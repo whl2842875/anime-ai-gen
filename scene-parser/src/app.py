@@ -211,6 +211,138 @@ Two person catching up.
 {user_text}
 """
 
+def build_prompt_zh(user_text):
+    return f"""
+你是一名专业的剧本编剧AI。
+请根据一段简要故事、对话或概要，将其**扩展为结构化的JSON剧本**，适合动画或视频生成。
+**请严格按照以下格式、规则与示例生成。**
+
+生成的JSON需符合如下结构：
+{{
+  "scenes": [
+    {{
+      "scene_id": 1,
+      "scene_desc": "场景描述",
+      "sub_scenes": [
+        {{
+          "sub_scene_id": 1,
+          "camera_movement": "镜头描述",
+          "storyboards": [
+            {{
+              "character": "角色姓名或旁白",
+              "expression": "情感",
+              "line": "台词或旁白"
+            }}
+          ]
+        }}
+      ]
+    }}
+  ]
+}}
+
+### 规则：
+1. **仅输出有效JSON**，不得包含多余文本、代码块或注释。
+2. **不重复。** 只输出一次JSON对象。
+3. **不要在JSON前后留空行。**
+4. 逻辑自洽，输出内容需与输入情境一致。
+5. 可以合理发挥，但要真实可信，忠于输入内容。
+6. 场景/角色/动作细节应贴合输入意图。
+7. 旁白使用"旁白"标注，始终拼写准确。
+8. 每个场景与子场景都必须有至少一个storyboards项。
+9. 不得杜撰未提及的场景或角色。
+10. 严禁出现markdown/代码块语法。
+
+### 示例输入：
+两人叙旧。
+
+### 示例输出：
+{{
+  "scenes": [
+    {{
+      "scene_id": 1,
+      "scene_desc": "咖啡馆内，午后阳光透过窗户洒下",
+      "sub_scenes": [
+        {{
+          "sub_scene_id": 1,
+          "camera_movement": "静态远景",
+          "storyboards": [
+            {{
+              "character": "旁白",
+              "expression": "平静",
+              "line": "多年未见的两位老友，在熟悉的咖啡馆再次相聚。"
+            }}
+          ]
+        }},
+        {{
+          "sub_scene_id": 2,
+          "camera_movement": "推近到李明",
+          "storyboards": [
+            {{
+              "character": "李明",
+              "expression": "微笑",
+              "line": "好久不见，张伟。你最近过得怎么样？"
+            }}
+          ]
+        }},
+        {{
+          "sub_scene_id": 3,
+          "camera_movement": "转向张伟",
+          "storyboards": [
+            {{
+              "character": "张伟",
+              "expression": "感慨",
+              "line": "是啊，一晃都快十年了。还记得我们一起熬夜写论文的日子吗？"
+            }}
+          ]
+        }}
+      ]
+    }},
+    {{
+      "scene_id": 2,
+      "scene_desc": "城市公园，傍晚微风拂面",
+      "sub_scenes": [
+        {{
+          "sub_scene_id": 1,
+          "camera_movement": "公园全景",
+          "storyboards": [
+            {{
+              "character": "旁白",
+              "expression": "温馨",
+              "line": "饭后，两人漫步在熟悉的公园，回忆起往昔的点点滴滴。"
+            }}
+          ]
+        }},
+        {{
+          "sub_scene_id": 2,
+          "camera_movement": "跟拍两人背影",
+          "storyboards": [
+            {{
+              "character": "李明",
+              "expression": "轻松",
+              "line": "这几年虽然联系少了，但每次见面都像没变过一样。"
+            }}
+          ]
+        }},
+        {{
+          "sub_scene_id": 3,
+          "camera_movement": "侧面特写张伟",
+          "storyboards": [
+            {{
+              "character": "张伟",
+              "expression": "感激",
+              "line": "嗯，老朋友就是这样，距离从来都不是问题。"
+            }}
+          ]
+        }}
+      ]
+    }}
+  ]
+}}
+
+### 现在，请根据以下输入生成格式化JSON，请注意不要包含任何markdown格式或代码块，输出的JSON必须有效且不能有多余逗号。不需要任何解释或注释，只输出JSON内容：
+{user_text}
+"""
+
 def extract_first_valid_json(text):
     # Clean the text
     text = text.strip()
@@ -277,7 +409,7 @@ def parse_scene():
     data = request.json
     user_text = data.get('text', '')
 
-    prompt = build_prompt(user_text)
+    prompt = build_prompt_zh(user_text)
     # Call the model
     output = llm(
       prompt,

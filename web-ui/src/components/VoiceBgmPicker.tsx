@@ -2,9 +2,6 @@ import React, { useState, useEffect, useRef } from 'react'
 import { storageManager } from '../utils/storage'
 
 interface VoiceBgmPickerProps {
-  parsed: any
-  setParsed: (parsed: any) => void
-  characterImages: Record<string, string>
   onComplete: () => void
 }
 
@@ -73,7 +70,9 @@ interface BGMSettings {
   volume: number
 }
 
-export default function VoiceBgmPicker({ parsed, setParsed, characterImages, onComplete }: VoiceBgmPickerProps) {
+export default function VoiceBgmPicker({ onComplete }: VoiceBgmPickerProps) {
+  const [parsed, setParsed] = useState<any>(null)
+  const [characterImages, setCharacterImages] = useState<Record<string, string>>({})
   const [characterVoices, setCharacterVoices] = useState<Record<string, string>>({})
   const [bgmSettings, setBgmSettings] = useState<BGMSettings | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -81,46 +80,27 @@ export default function VoiceBgmPicker({ parsed, setParsed, characterImages, onC
   const [duration, setDuration] = useState(0)
   const audioRef = useRef<HTMLAudioElement>(null)
 
-  // Extract unique characters from parsed data
-  const uniqueCharacters = React.useMemo(() => {
-    if (!parsed?.scenes) return []
-    
-    const characters = new Set<string>()
-    parsed.scenes.forEach((scene: any) => {
-      scene.sub_scenes?.forEach((sub: any) => {
-        sub.storyboards?.forEach((sb: any) => {
-          if (sb.character) {
-            characters.add(sb.character)
-          }
-        })
-      })
-    })
-    
-    return Array.from(characters)
-  }, [parsed])
-
-  // Load voice and BGM settings from storage
+  // Load all required data from storage on mount
   useEffect(() => {
-    const loadSettings = async () => {
+    const loadData = async () => {
       try {
-        const [savedVoices, savedBgm] = await Promise.all([
+        const [savedParsed, savedCharacterImages, savedVoices, savedBgm] = await Promise.all([
+          storageManager.getData('parsed'),
+          storageManager.getData('characterImages'),
           storageManager.getData('voiceSettings'),
           storageManager.getData('bgmSettings')
         ])
         
-        if (savedVoices) {
-          setCharacterVoices(savedVoices)
-        }
-        
-        if (savedBgm) {
-          setBgmSettings(savedBgm)
-        }
+        if (savedParsed) setParsed(savedParsed)
+        if (savedCharacterImages) setCharacterImages(savedCharacterImages)
+        if (savedVoices) setCharacterVoices(savedVoices)
+        if (savedBgm) setBgmSettings(savedBgm)
       } catch (error) {
-        console.error('Failed to load settings:', error)
+        console.error('Failed to load data:', error)
       }
     }
 
-    loadSettings()
+    loadData()
   }, [])
 
   // Save voice settings to storage whenever they change
@@ -140,6 +120,13 @@ export default function VoiceBgmPicker({ parsed, setParsed, characterImages, onC
       })
     }
   }, [bgmSettings])
+
+  // Save updated parsed data to storage whenever it changes
+  useEffect(() => {
+    if (parsed) {
+      storageManager.saveData('parsed', parsed).catch(console.error)
+    }
+  }, [parsed])
 
   // Apply voice selections to parsed data when voices change
   useEffect(() => {
@@ -171,7 +158,25 @@ export default function VoiceBgmPicker({ parsed, setParsed, characterImages, onC
         bgm: bgmSettings
       })
     }
-  }, [characterVoices, bgmSettings, parsed, setParsed])
+  }, [characterVoices, bgmSettings, parsed])
+
+  // Extract unique characters from parsed data
+  const uniqueCharacters = React.useMemo(() => {
+    if (!parsed?.scenes) return []
+    
+    const characters = new Set<string>()
+    parsed.scenes.forEach((scene: any) => {
+      scene.sub_scenes?.forEach((sub: any) => {
+        sub.storyboards?.forEach((sb: any) => {
+          if (sb.character) {
+            characters.add(sb.character)
+          }
+        })
+      })
+    })
+    
+    return Array.from(characters)
+  }, [parsed])
 
   // Audio event handlers
   useEffect(() => {
@@ -275,15 +280,73 @@ export default function VoiceBgmPicker({ parsed, setParsed, characterImages, onC
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
-  const removeBgm = () => {
+  const removeBgm = async () => {
     setIsPlaying(false)
     setBgmSettings(null)
-    storageManager.deleteData('bgmSettings').catch(console.error)
+    try {
+      await storageManager.deleteData('bgmSettings')
+    } catch (error) {
+      console.error('Failed to remove BGM from storage:', error)
+    }
+  }
+
+  const clearVoiceSettings = async () => {
+    if (window.confirm('Are you sure you want to clear all voice selections?')) {
+      try {
+        await storageManager.deleteData('voiceSettings')
+        setCharacterVoices({})
+      } catch (error) {
+        console.error('Failed to clear voice settings:', error)
+      }
+    }
+  }
+
+  // Count selected voices
+  const selectedVoicesCount = Object.keys(characterVoices).length
+  const totalCharacters = uniqueCharacters.length
+
+  if (!parsed) {
+    return (
+      <div>
+        <h2>3. Voice & BGM Picker</h2>
+        <div style={{ color: '#888', padding: 20, textAlign: 'center' }}>
+          <p>No parsed script data found.</p>
+          <p>Please go back to the Script Parser and parse your script first.</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div>
       <h2>3. Voice & BGM Picker</h2>
+      <p style={{ color: '#888', marginBottom: 12, fontSize: 14 }}>
+        Select voices for each character and choose background music for your video.
+      </p>
+
+      <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
+        <div style={{ fontSize: 14, color: '#888' }}>
+          Voices selected: {selectedVoicesCount}/{totalCharacters} characters
+        </div>
+        
+        {selectedVoicesCount > 0 && (
+          <button
+            onClick={clearVoiceSettings}
+            style={{
+              padding: '8px 16px',
+              background: '#ff6b6b',
+              color: 'white',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontSize: 12,
+              marginLeft: 'auto'
+            }}
+          >
+            🗑️ Clear All Voices
+          </button>
+        )}
+      </div>
       
       {uniqueCharacters.length > 0 ? (
         <div>
